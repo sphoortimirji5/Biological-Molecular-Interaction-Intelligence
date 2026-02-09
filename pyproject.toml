@@ -1,0 +1,33 @@
+[tool.poetry]
+name = "biological-molecular-interaction-intelligence"
+version = "0.1.0"
+description = "AI-assisted Drug-Protein Interaction (DTI) Ranking Platform"
+authors = ["Sphoorti Mirji <sphoortimirji@google.com>"]
+readme = "ProteinBindRank.md"
+packages = [{include = "src"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.115.0"
+uvicorn = "^0.30.0"
+sqlalchemy = "^2.0.30"
+alembic = "^1.13.0"
+pydantic = "^2.7.0"
+pydantic-settings = "^2.2.0"
+httpx = "^0.27.0"
+biopython = "^1.83"
+pandas = "^2.2.0"
+rdkit = "^2023.9.5"  # Ensure compatibility or use separate conda env if needed
+asyncpg = "^0.29.0"
+minio = "^7.2.0"
+python-multipart = "^0.0.9"
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.2.0"
+ruff = "^0.4.0"
+black = "^24.4.0"
+pre-commit = "^3.7.0"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
