@@ -12,8 +12,9 @@ from pathlib import Path
 from typing import Dict, Any, Optional
 from src.ingestion.interfaces import DataSource
 from src.config import settings
+from src.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class HTTPSource(DataSource):

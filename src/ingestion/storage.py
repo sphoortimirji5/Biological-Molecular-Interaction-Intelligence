@@ -8,6 +8,7 @@ Also exposes ``get_storage_provider()`` factory, which resolves the active
 provider from ``settings.object_store_type``.
 """
 import logging
+from src.logging_config import get_logger
 from pathlib import Path
 from typing import Dict, Any
 
@@ -17,7 +18,7 @@ from botocore.exceptions import ClientError
 from src.config import settings
 from src.ingestion.storage_interface import ObjectStorageProvider
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class S3StorageProvider(ObjectStorageProvider):

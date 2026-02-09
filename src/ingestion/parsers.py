@@ -12,9 +12,9 @@ from typing import Generator, Dict, Any
 import pandas as pd
 from Bio import SeqIO
 from rdkit import Chem
-import logging
+from src.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class FileParser:

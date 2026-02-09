@@ -34,10 +34,10 @@ Registering a proprietary source
     manager = IngestionManager()
     await manager.run_pipeline("pharma_x")
 """
-import logging
+import time
 import tempfile
 from pathlib import Path
-from typing import Optional, Dict, Any, List
+from typing import Dict, Any, List
 from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -49,8 +49,17 @@ from src.ingestion.interfaces import DataSource
 from src.ingestion.storage_interface import ObjectStorageProvider
 from src.ingestion.storage import get_storage_provider
 from src.ingestion.parsers import get_parser
+from src.logging_config import get_logger
+from src.metrics import (
+    RUNS_TOTAL,
+    RECORDS_UPSERTED,
+    STAGE_DURATION,
+    BATCH_SIZE,
+)
+from src.tracing import get_tracer
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
+tracer = get_tracer(__name__)
 
 # ---------------------------------------------------------------------------
 # Source Registry — maps source labels to DataSource instances.
@@ -110,63 +119,151 @@ class IngestionManager:
         Discover → Fetch → Store → Parse → Upsert. On failure the run is
         marked FAILED with error details before re-raising.
         """
-        async with AsyncSessionLocal() as session:
-            run = IngestionRun(
-                status="STARTED",
-                source=source_name,
-                started_at=datetime.utcnow(),
-            )
-            session.add(run)
-            await session.commit()
-            await session.refresh(run)
+        with tracer.start_as_current_span("ingestion.run_pipeline") as root_span:
+            root_span.set_attribute("source", source_name)
+            pipeline_start = time.monotonic()
 
-            try:
-                source = get_registered_source(source_name)
-                discovery = source.discover()
-
-                run.stats = discovery.get("stats")
+            async with AsyncSessionLocal() as session:
+                run = IngestionRun(
+                    status="STARTED",
+                    source=source_name,
+                    started_at=datetime.utcnow(),
+                )
                 session.add(run)
                 await session.commit()
+                await session.refresh(run)
 
-                with tempfile.TemporaryDirectory() as temp_dir:
-                    temp_path = Path(temp_dir) / f"{source_name}_raw.gz"
-                    downloaded_path = source.fetch(temp_path)
+                logger.info(
+                    "pipeline_started",
+                    source=source_name,
+                    run_id=str(run.run_id),
+                )
 
-                    meta = self.storage.upload_raw(
-                        source_name,
-                        discovery.get("version", "unknown"),
-                        downloaded_path,
-                    )
+                try:
+                    # -- Discover --
+                    with tracer.start_as_current_span("ingestion.discover") as span:
+                        t0 = time.monotonic()
+                        source = get_registered_source(source_name)
+                        discovery = source.discover()
+                        span.set_attribute("format", discovery["format"])
+                        span.set_attribute("entity_type", discovery["entity_type"])
+                        STAGE_DURATION.labels(source=source_name, stage="discover").observe(
+                            time.monotonic() - t0
+                        )
 
-                    run.checksums = {"sha256": meta["sha256"]}
+                    run.stats = discovery.get("stats")
                     session.add(run)
                     await session.commit()
 
-                    # Format-driven routing — no source-specific branches.
                     fmt = discovery["format"]
                     entity_type = discovery["entity_type"]
-                    parser = get_parser(fmt)
-                    await self._process(
-                        session, parser, downloaded_path, source_name, entity_type
+
+                    logger.info(
+                        "discovery_complete",
+                        source=source_name,
+                        format=fmt,
+                        entity_type=entity_type,
+                        version=discovery.get("version"),
                     )
 
-                run.status = "COMPLETED"
-                run.ended_at = datetime.utcnow()
-                session.add(run)
-                await session.commit()
+                    with tempfile.TemporaryDirectory() as temp_dir:
+                        temp_path = Path(temp_dir) / f"{source_name}_raw.gz"
 
-                logger.info("Ingestion run %s completed.", run.run_id)
+                        # -- Fetch --
+                        with tracer.start_as_current_span("ingestion.fetch") as span:
+                            t0 = time.monotonic()
+                            downloaded_path = source.fetch(temp_path)
+                            fetch_duration = time.monotonic() - t0
+                            file_size = downloaded_path.stat().st_size
+                            span.set_attribute("file_size_bytes", file_size)
+                            STAGE_DURATION.labels(source=source_name, stage="fetch").observe(
+                                fetch_duration
+                            )
 
-            except Exception as e:
-                logger.error(
-                    "Ingestion run %s failed: %s", run.run_id, e, exc_info=True
-                )
-                run.status = "FAILED"
-                run.ended_at = datetime.utcnow()
-                run.stats = {"error": str(e)}
-                session.add(run)
-                await session.commit()
-                raise
+                        logger.info(
+                            "fetch_complete",
+                            source=source_name,
+                            bytes=file_size,
+                            duration_s=round(fetch_duration, 2),
+                        )
+
+                        # -- Store --
+                        with tracer.start_as_current_span("ingestion.store") as span:
+                            t0 = time.monotonic()
+                            meta = self.storage.upload_raw(
+                                source_name,
+                                discovery.get("version", "unknown"),
+                                downloaded_path,
+                            )
+                            STAGE_DURATION.labels(source=source_name, stage="store").observe(
+                                time.monotonic() - t0
+                            )
+                            span.set_attribute("sha256", meta["sha256"])
+
+                        run.checksums = {"sha256": meta["sha256"]}
+                        session.add(run)
+                        await session.commit()
+
+                        logger.info(
+                            "store_complete",
+                            source=source_name,
+                            sha256=meta["sha256"],
+                        )
+
+                        # -- Parse + Upsert --
+                        with tracer.start_as_current_span("ingestion.parse_and_upsert") as span:
+                            t0 = time.monotonic()
+                            parser = get_parser(fmt)
+                            total_records = await self._process(
+                                session, parser, downloaded_path, source_name, entity_type
+                            )
+                            STAGE_DURATION.labels(
+                                source=source_name, stage="parse_and_upsert"
+                            ).observe(time.monotonic() - t0)
+                            span.set_attribute("total_records", total_records)
+
+                        logger.info(
+                            "parse_upsert_complete",
+                            source=source_name,
+                            records=total_records,
+                            entity_type=entity_type,
+                        )
+
+                    run.status = "COMPLETED"
+                    run.ended_at = datetime.utcnow()
+                    session.add(run)
+                    await session.commit()
+
+                    total_duration = time.monotonic() - pipeline_start
+                    RUNS_TOTAL.labels(source=source_name, status="COMPLETED").inc()
+
+                    logger.info(
+                        "pipeline_completed",
+                        source=source_name,
+                        run_id=str(run.run_id),
+                        duration_s=round(total_duration, 2),
+                        records=total_records,
+                    )
+
+                except Exception as e:
+                    RUNS_TOTAL.labels(source=source_name, status="FAILED").inc()
+                    root_span.set_attribute("error", True)
+                    root_span.set_attribute("error.message", str(e))
+
+                    logger.error(
+                        "pipeline_failed",
+                        source=source_name,
+                        run_id=str(run.run_id),
+                        error=str(e),
+                        exc_info=True,
+                    )
+
+                    run.status = "FAILED"
+                    run.ended_at = datetime.utcnow()
+                    run.stats = {"error": str(e)}
+                    session.add(run)
+                    await session.commit()
+                    raise
 
     # ------------------------------------------------------------------
     # Unified processing — driven by entity_type, not source name
@@ -180,19 +277,27 @@ class IngestionManager:
         source_name: str,
         entity_type: str,
         batch_size: int = 1000,
-    ) -> None:
-        """Parse file and batch-upsert to the table matching *entity_type*."""
+    ) -> int:
+        """Parse file and batch-upsert to the table matching *entity_type*.
+
+        Returns the total number of records processed.
+        """
         batch: List[Dict[str, Any]] = []
+        total = 0
 
         for record in parser.parse(file_path):
             row = self._to_row(record, source_name, entity_type)
             batch.append(row)
             if len(batch) >= batch_size:
-                await self._upsert(session, entity_type, batch)
+                await self._upsert(session, entity_type, batch, source_name)
+                total += len(batch)
                 batch = []
 
         if batch:
-            await self._upsert(session, entity_type, batch)
+            await self._upsert(session, entity_type, batch, source_name)
+            total += len(batch)
+
+        return total
 
     @staticmethod
     def _to_row(
@@ -217,24 +322,39 @@ class IngestionManager:
 
     @staticmethod
     async def _upsert(
-        session: AsyncSession, entity_type: str, batch: List[Dict[str, Any]]
+        session: AsyncSession,
+        entity_type: str,
+        batch: List[Dict[str, Any]],
+        source_name: str,
     ) -> None:
         """Idempotent bulk upsert via PostgreSQL ON CONFLICT."""
-        if entity_type == "compound":
-            table = Compound.__table__
-            constraint = "uq_compound_source_external_id"
-            update_cols = {"smiles": "smiles", "metadata": "metadata"}
-        elif entity_type == "protein":
-            table = Protein.__table__
-            constraint = "uq_protein_source_external_id"
-            update_cols = {"sequence": "sequence", "metadata": "metadata"}
-        else:
-            raise ValueError(f"Unknown entity_type: '{entity_type}'")
+        with tracer.start_as_current_span("ingestion.upsert_batch") as span:
+            span.set_attribute("entity_type", entity_type)
+            span.set_attribute("batch_size", len(batch))
 
-        stmt = insert(table).values(batch)
-        stmt = stmt.on_conflict_do_update(
-            constraint=constraint,
-            set_={col: getattr(stmt.excluded, col) for col in update_cols},
-        )
-        await session.execute(stmt)
-        await session.commit()
+            BATCH_SIZE.labels(source=source_name, entity_type=entity_type).observe(
+                len(batch)
+            )
+
+            if entity_type == "compound":
+                table = Compound.__table__
+                constraint = "uq_compound_source_external_id"
+                update_cols = {"smiles": "smiles", "metadata": "metadata"}
+            elif entity_type == "protein":
+                table = Protein.__table__
+                constraint = "uq_protein_source_external_id"
+                update_cols = {"sequence": "sequence", "metadata": "metadata"}
+            else:
+                raise ValueError(f"Unknown entity_type: '{entity_type}'")
+
+            stmt = insert(table).values(batch)
+            stmt = stmt.on_conflict_do_update(
+                constraint=constraint,
+                set_={col: getattr(stmt.excluded, col) for col in update_cols},
+            )
+            await session.execute(stmt)
+            await session.commit()
+
+            RECORDS_UPSERTED.labels(
+                source=source_name, entity_type=entity_type
+            ).inc(len(batch))
