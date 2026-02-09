@@ -12,7 +12,7 @@ class IngestionRun(Base):
 
     run_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, server_default=text("gen_random_uuid()"))
     status: Mapped[str] = mapped_column(String, nullable=False)  # STARTED, COMPLETED, FAILED
-    source: Mapped[str] = mapped_column(String, nullable=False) # e.g. "chembl", "uniprot"
+    source: Mapped[str] = mapped_column(String, nullable=False)  # free-text source label
     stats: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     checksums: Mapped[Optional[Dict[str, Any]]] = mapped_column(JSONB, nullable=True)
     started_at: Mapped[datetime] = mapped_column(TIMESTAMP(timezone=True), server_default=func.now(), default=datetime.utcnow)

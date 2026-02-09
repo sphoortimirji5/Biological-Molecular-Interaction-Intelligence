@@ -18,7 +18,7 @@ The system is designed for **reproducibility**, **extensibility**, and **traceab
 graph TD
     subgraph "Phase 1: Ingestion"
         A[External Sources] -->|Fetch & Validate| B(Ingestion Worker Pool)
-        B -->|Raw Artifacts| C[(MinIO Object Storage)]
+        B -->|Raw Artifacts| C[(S3-Compatible Object Storage)]
         B -->|Structured Metadata| D[(PostgreSQL)]
         
         C -.->|s3://raw/chembl/v33| C1[Raw Data]
@@ -44,8 +44,8 @@ graph TD
         L --> J
     end
     
-    style C fill:#f9f,stroke:#333,stroke-width:2px
-    style D fill:#dbf,stroke:#333,stroke-width:2px
+    style C fill:#fff2cc,stroke:#333,stroke-width:2px,color:#000
+    style D fill:#e1d5e7,stroke:#333,stroke-width:2px,color:#000
 ```
 
 ## Core Principles
@@ -68,7 +68,7 @@ graph TD
 ├── migrations/         # Alembic Database Migrations
 ├── docs/               # Architecture & Standards Documentation
 ├── tests/              # Unit & Integration Tests
-├── docker-compose.yml  # Local stack (Postgres + MinIO)
+├── docker-compose.yml  # Local stack (Postgres + S3-compatible storage)
 └── pyproject.toml      # Dependency Management
 ```
 
@@ -84,7 +84,7 @@ Phase 1 focuses on deterministic ingestion, identity normalization, and metadata
 *   JSONB metadata support.
 
 **Storage**:
-*   S3/MinIO agnostic via `src/ingestion/storage.py`.
+*   S3-compatible via `ObjectStorageProvider` interface (`src/ingestion/storage_interface.py`).
 *   Strict layout: `raw/<source>/<version>/<sha256>/<file>`.
 
 **Parsers**:

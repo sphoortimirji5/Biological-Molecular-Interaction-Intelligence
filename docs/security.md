@@ -79,7 +79,7 @@ Security requirements are driven by **data integrity, access control, and intell
 * Encryption at rest for:
 
   * PostgreSQL data volumes
-  * Object storage (MinIO)
+  * Object storage (S3-compatible)
 
 ---
 

@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     # Scoring
     scoring_strategy: str = "similarity"  # "similarity" or "learned"
 
-    # Object Storage (MinIO / S3)
-    object_store_type: str = "minio"  # minio | s3
+    # Object Storage (S3-compatible)
+    object_store_type: str = "s3"  # Provider key resolved by get_storage_provider()
     object_store_endpoint: str
     object_store_access_key: str
     object_store_secret_key: str
@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     object_store_region: str = "us-east-1"
     object_store_use_ssl: bool = False
     object_store_versioning: bool = False
+
+    # Default source URLs (override via environment variables)
+    chembl_sdf_url: str = ""
+    uniprot_fasta_url: str = ""
 
     @computed_field
     @property
