@@ -27,6 +27,17 @@ class Settings(BaseSettings):
     object_store_use_ssl: bool = False
     object_store_versioning: bool = False
 
+    # Observability
+    otel_exporter: str = "console"
+    otel_service_name: str = "bio-interaction-intelligence"
+    otel_exporter_otlp_endpoint: str = "http://localhost:4317"
+
+    # Feature Generation
+    feature_store_bucket: str = "features"
+    esm2_model_name: str = "facebook/esm2_t6_8M_UR50D"
+    morgan_radius: int = 2
+    morgan_n_bits: int = 2048
+
     # Default source URLs (override via environment variables)
     chembl_sdf_url: str = ""
     uniprot_fasta_url: str = ""
