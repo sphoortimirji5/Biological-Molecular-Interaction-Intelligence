@@ -19,7 +19,13 @@ RUN poetry config virtualenvs.create false
 # Copy dependency definition
 COPY pyproject.toml poetry.lock* ./
 
-# Install dependencies
+# ── PyTorch: CPU-only by default (fast local builds) ──
+# Override for GPU/CUDA in production:
+#   docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 .
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+RUN pip install torch --index-url ${TORCH_INDEX_URL} --no-cache-dir
+
+# Install remaining dependencies (torch already satisfied, skipped)
 RUN poetry install --no-interaction --no-ansi --no-root
 
 # Copy application code

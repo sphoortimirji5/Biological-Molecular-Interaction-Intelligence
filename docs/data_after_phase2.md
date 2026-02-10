@@ -125,7 +125,18 @@ emb_319:      0.0891
 >
 > Changes in the upstream model version would silently invalidate all trained downstream models. Running `facebook/esm2` locally ensures we own the exact versioning and reproducibility of the featurization pipeline.
 
----
+> [!WARNING]
+> **Production GPU Switch Required**
+>
+> Local dev uses **CPU-only PyTorch** (~200 MB, fast builds). Production deployments with large protein sets **must** switch to GPU:
+> ```bash
+> # Local (default) — CPU-only, fast builds
+> docker-compose build
+>
+> # Production — CUDA 12.1 GPU support
+> docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 .
+> ```
+> The `TORCH_INDEX_URL` build arg in the `Dockerfile` controls this. No code changes needed.
 
 ## How Phase 3 Consumes This
 
