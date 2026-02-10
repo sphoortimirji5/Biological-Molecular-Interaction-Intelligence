@@ -8,9 +8,10 @@ Also exposes ``get_storage_provider()`` factory, which resolves the active
 provider from ``settings.object_store_type``.
 """
 import logging
+import io
 from src.logging_config import get_logger
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, IO
 
 import boto3
 from botocore.exceptions import ClientError
@@ -107,7 +108,7 @@ class S3StorageProvider(ObjectStorageProvider):
         return dest
 
     def exists(self, bucket: str, key: str) -> bool:
-        """Check whether an object exists in the given bucket."""
+        """Check whether an object exists via HEAD request."""
         try:
             self.client.head_object(Bucket=bucket, Key=key)
             return True

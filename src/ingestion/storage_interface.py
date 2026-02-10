@@ -10,7 +10,7 @@ The active provider is resolved at runtime from ``settings.object_store_type``.
 """
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, Any
+from typing import Dict, Any, IO
 import hashlib
 
 
