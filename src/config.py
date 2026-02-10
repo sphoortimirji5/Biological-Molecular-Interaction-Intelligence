@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     # Scoring
     scoring_strategy: str = "similarity"  # "similarity" or "learned"
+    model_path: str = "models/xgboost/v1"  # Path to trained model directory
 
     # Object Storage (S3-compatible)
     object_store_type: str = "s3"  # Provider key resolved by get_storage_provider()
