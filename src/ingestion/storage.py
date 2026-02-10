@@ -140,8 +140,8 @@ def get_storage_provider() -> ObjectStorageProvider:
     ``elif`` branches for GCS, Azure Blob, or local filesystem providers.
     """
     provider_type = settings.object_store_type.lower()
-    if provider_type == "s3":
+    if provider_type in ("s3", "minio"):
         return S3StorageProvider()
     raise ValueError(
-        f"Unknown OBJECT_STORE_TYPE: '{provider_type}'. Supported: s3"
+        f"Unknown OBJECT_STORE_TYPE: '{provider_type}'. Supported: s3, minio"
     )

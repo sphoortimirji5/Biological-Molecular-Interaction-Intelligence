@@ -120,10 +120,12 @@ The prototype defaults to deterministic similarity-based ranking using pretraine
 
 ## Product Roadmap
 
-**Phase 2: Molecular Featurization**
-*   ECFP4/Morgan Fingerprints generation.
-*   Protein Embedding (ESM-2 / ProtTrans) integration.
-*   Feature Store implementation (Parquet/S3).
+**Phase 2: Molecular Featurization** 
+*   Feature Store — Parquet persistence on S3 with versioned manifests.
+*   Morgan Fingerprints (ECFP4) — 2048-bit compound featurization via RDKit.
+*   Protein Embeddings (ESM-2) — 320-dim mean-pooled embeddings via HuggingFace.
+*   Featurization Manager — Batch orchestrator (DB → generators → S3).
+*   Integration tested end-to-end (seed DB → featurize → verify Parquet).
 
 **Phase 3: Model Training**
 *   XGBoost / Random Forest baseline models.
@@ -134,5 +136,3 @@ The prototype defaults to deterministic similarity-based ranking using pretraine
 *   FastAPI serving layer.
 *   Real-time similarity search.
 *   Dockerized deployment.
-
-
