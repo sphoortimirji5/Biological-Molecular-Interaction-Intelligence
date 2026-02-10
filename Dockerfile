@@ -16,17 +16,19 @@ ENV PATH="/root/.local/bin:$PATH"
 # Configure Poetry to not use virtualenvs inside container
 RUN poetry config virtualenvs.create false
 
-# Copy dependency definition
-COPY pyproject.toml poetry.lock* ./
-
 # ── PyTorch: CPU-only by default (fast local builds) ──
 # Override for GPU/CUDA in production:
 #   docker build --build-arg TORCH_INDEX_URL=https://download.pytorch.org/whl/cu121 .
+# Installed BEFORE pyproject.toml so it stays cached when deps change.
 ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
 RUN pip install torch --index-url ${TORCH_INDEX_URL} --no-cache-dir
 
+# Copy dependency definition (changes bust cache for poetry install only, not torch)
+COPY pyproject.toml poetry.lock* ./
+
 # Install remaining dependencies (torch already satisfied, skipped)
 RUN poetry install --no-interaction --no-ansi --no-root
+
 
 # Copy application code
 COPY . .
