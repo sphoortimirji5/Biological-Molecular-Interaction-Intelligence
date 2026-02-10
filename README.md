@@ -118,6 +118,15 @@ The system cleanly separates immutable scientific artifacts (S3) from mutable re
 
 The prototype defaults to deterministic similarity-based ranking using pretrained open-source models. The scoring layer is designed to be pluggable, allowing future introduction of learned scoring functions without changing the ingestion or inference pipeline.
 
+## Key Technology Choices
+
+| Decision | Chosen | Alternatives Considered | Rationale |
+|---|---|---|---|
+| **Protein Embeddings** | HuggingFace `transformers` | Facebook `fair-esm`, PyTorch Hub | Model-agnostic: swap ESM-2 → ProtTrans/Ankh via one config change. Standard tokenizer API handles padding/truncation. |
+| **Compound Fingerprints** | RDKit Morgan (ECFP4) | MACCS, Avalon, MAP4 | Industry standard for DTI. Deterministic, fast, no model weights. |
+| **Feature Persistence** | Parquet on S3 | HDF5, CSV, Delta Lake | Columnar, compressed, schema-enforced. Direct compatibility with pandas/PyArrow. |
+| **PyTorch Distribution** | CPU-only local, GPU via Dockerfile build arg | Single full install | 200 MB local vs 2 GB. Zero code changes between environments. |
+
 ## Product Roadmap
 
 **Phase 2: Molecular Featurization** 
