@@ -17,14 +17,19 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
     loop.close()
 
 
-@pytest_asyncio.fixture(autouse=True)
-async def db_cleanup():
+@pytest_asyncio.fixture(autouse=False)
+async def db_cleanup(request):
     """
-    Per-test DB isolation via TRUNCATE before each test.
-    
-    Uses @pytest_asyncio.fixture (not @pytest.fixture) so the async
-    fixture is actually awaited by pytest-asyncio 0.23+.
+    Per-test DB isolation via TRUNCATE.
+
+    Only runs on tests marked with @pytest.mark.integration.
+    Unit tests using mocks skip this entirely.
     """
+    marker = request.node.get_closest_marker("integration")
+    if marker is None:
+        yield
+        return
+
     async with AsyncSessionLocal() as session:
         await session.execute(
             text("TRUNCATE TABLE interactions, compounds, proteins, ingestion_runs RESTART IDENTITY CASCADE")

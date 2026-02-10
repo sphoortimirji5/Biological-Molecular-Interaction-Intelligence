@@ -115,6 +115,22 @@ class S3StorageProvider(ObjectStorageProvider):
         except ClientError:
             return False
 
+    def put_object(self, bucket: str, key: str, body: IO, content_type: str = "application/octet-stream") -> None:
+        """Upload a file-like object to S3."""
+        try:
+            self.client.put_object(Bucket=bucket, Key=key, Body=body, ContentType=content_type)
+        except ClientError as e:
+            if e.response["Error"]["Code"] == "NoSuchBucket":
+                self.client.create_bucket(Bucket=bucket)
+                self.client.put_object(Bucket=bucket, Key=key, Body=body, ContentType=content_type)
+            else:
+                raise
+
+    def get_object(self, bucket: str, key: str) -> IO:
+        """Download an object as a file-like stream."""
+        response = self.client.get_object(Bucket=bucket, Key=key)
+        return io.BytesIO(response["Body"].read())
+
 
 def get_storage_provider() -> ObjectStorageProvider:
     """

@@ -41,6 +41,14 @@ class ObjectStorageProvider(ABC):
     def exists(self, bucket: str, key: str) -> bool:
         """Check whether an object exists in the given bucket."""
 
+    @abstractmethod
+    def put_object(self, bucket: str, key: str, body: IO, content_type: str = "application/octet-stream") -> None:
+        """Upload a file-like object."""
+
+    @abstractmethod
+    def get_object(self, bucket: str, key: str) -> IO:
+        """Download an object as a file-like stream."""
+
     @staticmethod
     def calculate_checksum(file_path: Path) -> str:
         """Compute SHA-256 digest for integrity verification."""
