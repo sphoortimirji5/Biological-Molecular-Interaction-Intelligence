@@ -127,21 +127,3 @@ The prototype defaults to deterministic similarity-based ranking using pretraine
 | **Feature Persistence** | Parquet on S3 | HDF5, CSV, Delta Lake | Columnar, compressed, schema-enforced. Direct compatibility with pandas/PyArrow. |
 | **PyTorch Distribution** | CPU-only local, GPU via Dockerfile build arg | Single full install | 200 MB local vs 2 GB. Zero code changes between environments. |
 
-## Product Roadmap
-
-**Phase 2: Molecular Featurization** 
-*   Feature Store — Parquet persistence on S3 with versioned manifests.
-*   Morgan Fingerprints (ECFP4) — 2048-bit compound featurization via RDKit.
-*   Protein Embeddings (ESM-2) — 320-dim mean-pooled embeddings via HuggingFace.
-*   Featurization Manager — Batch orchestrator (DB → generators → S3).
-*   Integration tested end-to-end (seed DB → featurize → verify Parquet).
-
-**Phase 3: Model Training**
-*   XGBoost / Random Forest baseline models.
-*   Deep Learning (Graph Neural Networks) advanced models.
-*   Experiment Tracking (MLflow integration).
-
-**Phase 4: Inference API**
-*   FastAPI serving layer.
-*   Real-time similarity search.
-*   Dockerized deployment.

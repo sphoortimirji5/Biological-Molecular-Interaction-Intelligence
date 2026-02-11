@@ -3,7 +3,7 @@ import pytest_asyncio
 import asyncio
 from typing import Generator
 from sqlalchemy import text
-from src.db.database import AsyncSessionLocal
+from src.db.database import AsyncSessionLocal, engine
 
 
 @pytest.fixture(scope="session")
@@ -24,11 +24,17 @@ async def db_cleanup(request):
 
     Only runs on tests marked with @pytest.mark.integration.
     Unit tests using mocks skip this entirely.
+
+    Disposes the async engine connection pool before TRUNCATE to avoid
+    asyncpg 'another operation is in progress' errors from stale connections.
     """
     marker = request.node.get_closest_marker("integration")
     if marker is None:
         yield
         return
+
+    # Dispose stale connections from any previous test
+    await engine.dispose()
 
     async with AsyncSessionLocal() as session:
         await session.execute(
@@ -36,3 +42,7 @@ async def db_cleanup(request):
         )
         await session.commit()
     yield
+
+    # Clean up connections after the test
+    await engine.dispose()
+

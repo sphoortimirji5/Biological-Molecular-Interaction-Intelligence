@@ -97,8 +97,9 @@ def _register_test_source(
 # ---------------------------------------------------------------------------
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
-async def test_compound_ingestion_flow():
+async def test_compound_ingestion_flow(db_cleanup):
     """Happy path: SDF format → compounds table."""
     _register_test_source("test_compound_src", COMPOUND_DISCOVERY, SAMPLE_SDF_BYTES)
     mock_storage = _make_mock_storage("fakehash")
@@ -126,8 +127,9 @@ async def test_compound_ingestion_flow():
         assert compound.external_id == "ASPIRIN"
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
-async def test_protein_ingestion_flow():
+async def test_protein_ingestion_flow(db_cleanup):
     """Happy path: FASTA format → proteins table."""
     _register_test_source("test_protein_src", PROTEIN_DISCOVERY, SAMPLE_FASTA_BYTES)
     mock_storage = _make_mock_storage("fakehash_prot")
@@ -145,8 +147,9 @@ async def test_protein_ingestion_flow():
         assert protein.external_id == "P12345"
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
-async def test_idempotency_no_duplicates():
+async def test_idempotency_no_duplicates(db_cleanup):
     """Ingest the same source twice → exactly 1 compound row, not 2."""
     _register_test_source("test_compound_src", COMPOUND_DISCOVERY, SAMPLE_SDF_BYTES)
 
@@ -173,8 +176,9 @@ async def test_idempotency_no_duplicates():
         assert run_count == 2, f"Expected 2 runs, got {run_count}"
 
 
+@pytest.mark.integration
 @pytest.mark.asyncio
-async def test_failure_path_fetch_throws():
+async def test_failure_path_fetch_throws(db_cleanup):
     """When fetch raises, the run should be marked FAILED with error details."""
     failing_src = MagicMock(spec=HTTPSource)
     failing_src.discover.return_value = COMPOUND_DISCOVERY
