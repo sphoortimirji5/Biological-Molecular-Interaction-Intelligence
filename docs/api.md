@@ -27,9 +27,37 @@ Once the server is running, open:
 | Method | Path | Tag | Description |
 |--------|------|-----|-------------|
 | `GET` | `/` | General | Welcome message — confirms API is reachable |
-| `GET` | `/health` | Operations | Liveness probe — returns `{"status": "ok"}` |
+| `GET` | `/health` | Operations | Readiness probe — checks DB, S3, and model status |
 | `GET` | `/metrics` | Operations | Prometheus-compatible metrics scrape endpoint |
 | `POST` | `/rank` | Inference | Rank protein targets for a query compound |
+
+---
+
+## GET /health — Example
+
+**200 (healthy):**
+```json
+{
+  "status": "healthy",
+  "checks": {
+    "database": "ok",
+    "object_store": "ok",
+    "model_loaded": true
+  }
+}
+```
+
+**503 (degraded):**
+```json
+{
+  "status": "degraded",
+  "checks": {
+    "database": "connection refused",
+    "object_store": "ok",
+    "model_loaded": false
+  }
+}
+```
 
 ---
 

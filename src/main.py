@@ -81,20 +81,89 @@ async def root():
     "/health",
     tags=["Operations"],
     summary="Health Check",
-    response_description="Service health status",
+    response_description="Service health with component readiness",
     responses={
         200: {
+            "description": "All components healthy",
             "content": {
                 "application/json": {
-                    "example": {"status": "ok"}
+                    "example": {
+                        "status": "healthy",
+                        "checks": {
+                            "database": "ok",
+                            "object_store": "ok",
+                            "model_loaded": True,
+                        },
+                    }
                 }
-            }
-        }
+            },
+        },
+        503: {
+            "description": "One or more components degraded",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "status": "degraded",
+                        "checks": {
+                            "database": "connection refused",
+                            "object_store": "ok",
+                            "model_loaded": False,
+                        },
+                    }
+                }
+            },
+        },
     },
 )
 async def health():
-    """Lightweight liveness probe. Returns `ok` if the service is running."""
-    return {"status": "ok"}
+    """
+    Readiness probe with component-level checks.
+
+    - **database**: Runs `SELECT 1` to verify Postgres connectivity.
+    - **object_store**: Calls `head_bucket` on the feature store bucket.
+    - **model_loaded**: Reports whether the inference service has been initialized.
+
+    Returns HTTP 200 if all infrastructure checks pass, HTTP 503 otherwise.
+    """
+    checks = {}
+    all_ok = True
+
+    # --- Database ---
+    try:
+        from src.db.database import AsyncSessionLocal
+        from sqlalchemy import text
+
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+        checks["database"] = "ok"
+    except Exception as e:
+        checks["database"] = str(e)[:120]
+        all_ok = False
+
+    # --- Object Store (S3 / MinIO) ---
+    try:
+        from src.config import settings
+        from src.ingestion.storage import S3StorageProvider
+
+        storage = S3StorageProvider()
+        storage.client.head_bucket(Bucket=settings.feature_store_bucket)
+        checks["object_store"] = "ok"
+    except Exception as e:
+        checks["object_store"] = str(e)[:120]
+        all_ok = False
+
+    # --- Model ---
+    checks["model_loaded"] = _inference_service is not None
+
+    status_code = 200 if all_ok else 503
+    return Response(
+        content=__import__("json").dumps({
+            "status": "healthy" if all_ok else "degraded",
+            "checks": checks,
+        }),
+        media_type="application/json",
+        status_code=status_code,
+    )
 
 
 @app.get(
