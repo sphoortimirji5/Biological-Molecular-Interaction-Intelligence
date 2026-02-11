@@ -134,6 +134,44 @@ def test_rank_success_with_mock(client):
 
 
 # ---------------------------------------------------------------------------
+# POST /similar
+# ---------------------------------------------------------------------------
+
+
+def test_similar_success_with_mock(client):
+    """POST /similar with mocked similarity service → 200 with results."""
+    mock_service = MagicMock()
+    mock_service.find_similar_compounds.return_value = [
+        {"rank": 1, "external_id": "C001", "source": "chembl", "score": 0.95},
+        {"rank": 2, "external_id": "C002", "source": "chembl", "score": 0.73},
+    ]
+
+    with patch("src.main._get_similarity_service", return_value=mock_service):
+        resp = client.post("/similar", json={
+            "entity_type": "compound",
+            "query": "CC(=O)Oc1ccccc1C(=O)O",
+            "top_k": 2,
+        })
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["entity_type"] == "compound"
+    assert body["similarity_metric"] == "cosine"
+    assert len(body["results"]) == 2
+    assert body["results"][0]["score"] == 0.95
+
+
+def test_similar_invalid_entity_type(client):
+    """POST /similar with bad entity_type → 422."""
+    resp = client.post("/similar", json={
+        "entity_type": "gene",
+        "query": "ATCG",
+        "top_k": 5,
+    })
+    assert resp.status_code == 422
+
+
+# ---------------------------------------------------------------------------
 # OpenAPI Schema
 # ---------------------------------------------------------------------------
 
@@ -146,3 +184,5 @@ def test_openapi_schema_accessible(client):
     assert schema["info"]["title"] == "Biological Molecular Interaction Intelligence"
     assert "/rank" in schema["paths"]
     assert "/health" in schema["paths"]
+    assert "/similar" in schema["paths"]
+

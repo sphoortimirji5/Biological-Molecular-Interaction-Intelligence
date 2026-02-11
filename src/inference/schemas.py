@@ -93,3 +93,89 @@ class RankResponse(BaseModel):
             ]
         }
     }
+
+
+# ---------------------------------------------------------------------------
+# Similarity Search schemas
+# ---------------------------------------------------------------------------
+
+
+class SimilarRequest(BaseModel):
+    """Input: entity type, query string, and desired number of similar results."""
+
+    entity_type: str = Field(
+        ...,
+        description="Type of entity to search: 'protein' or 'compound'",
+        examples=["protein"],
+    )
+    query: str = Field(
+        ...,
+        description="Protein amino-acid sequence or compound SMILES string",
+        json_schema_extra={"examples": ["MKTAYIAKQRQISFVKSH"]},
+    )
+    top_k: int = Field(
+        default=10,
+        ge=1,
+        le=500,
+        description="Number of most-similar results to return",
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "entity_type": "protein",
+                    "query": "MKTAYIAKQRQISFVKSH",
+                    "top_k": 5,
+                },
+                {
+                    "entity_type": "compound",
+                    "query": "CC(=O)Oc1ccccc1C(=O)O",
+                    "top_k": 10,
+                },
+            ]
+        }
+    }
+
+
+class SimilarResponse(BaseModel):
+    """Output: ranked list of similar entities."""
+
+    entity_type: str = Field(
+        ...,
+        description="Echo of the queried entity type",
+        examples=["protein"],
+    )
+    query: str = Field(
+        ...,
+        description="Echo of the query string",
+        examples=["MKTAYIAKQRQISFVKSH"],
+    )
+    top_k: int = Field(..., description="Number of results requested", examples=[5])
+    similarity_metric: str = Field(
+        ...,
+        description="Similarity metric used (cosine)",
+        examples=["cosine"],
+    )
+    results: List[RankedTarget] = Field(
+        ..., description="Similar entities, highest score first"
+    )
+
+    model_config = {
+        "json_schema_extra": {
+            "examples": [
+                {
+                    "entity_type": "protein",
+                    "query": "MKTAYIAKQRQISFVKSH",
+                    "top_k": 3,
+                    "similarity_metric": "cosine",
+                    "results": [
+                        {"rank": 1, "external_id": "P31749", "source": "uniprot", "score": 0.982},
+                        {"rank": 2, "external_id": "P00533", "source": "uniprot", "score": 0.941},
+                        {"rank": 3, "external_id": "P04637", "source": "uniprot", "score": 0.897},
+                    ],
+                }
+            ]
+        }
+    }
+

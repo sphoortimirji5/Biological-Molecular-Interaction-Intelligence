@@ -2,7 +2,10 @@ from fastapi import FastAPI, Response, HTTPException
 from fastapi.openapi.utils import get_openapi
 from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
 from src.logging_config import get_logger
-from src.inference.schemas import RankRequest, RankResponse, RankedTarget
+from src.inference.schemas import (
+    RankRequest, RankResponse, RankedTarget,
+    SimilarRequest, SimilarResponse,
+)
 
 logger = get_logger(__name__)
 
@@ -253,5 +256,105 @@ async def rank(request: RankRequest):
         smiles=request.smiles,
         top_k=request.top_k,
         model_version=service.model_version,
+        results=[RankedTarget(**r) for r in results],
+    )
+
+
+# Lazy-initialized similarity service
+_similarity_service = None
+
+
+def _get_similarity_service():
+    """Factory: build SimilarityService once from config, cache globally."""
+    global _similarity_service
+    if _similarity_service is not None:
+        return _similarity_service
+
+    from src.config import settings
+    from src.features.store import FeatureStore
+    from src.ingestion.storage import S3StorageProvider
+    from src.inference.similarity import SimilarityService
+
+    storage = S3StorageProvider()
+    feature_store = FeatureStore(storage=storage, bucket=settings.feature_store_bucket)
+
+    _similarity_service = SimilarityService(feature_store=feature_store)
+    return _similarity_service
+
+
+@app.post(
+    "/similar",
+    response_model=SimilarResponse,
+    tags=["Inference"],
+    summary="Find Similar Entities",
+    response_description="Ranked list of similar proteins or compounds",
+    responses={
+        200: {
+            "description": "Successful similarity search",
+            "content": {
+                "application/json": {
+                    "example": {
+                        "entity_type": "protein",
+                        "query": "MKTAYIAKQRQISFVKSH",
+                        "top_k": 3,
+                        "similarity_metric": "cosine",
+                        "results": [
+                            {"rank": 1, "external_id": "P31749", "source": "uniprot", "score": 0.982},
+                            {"rank": 2, "external_id": "P00533", "source": "uniprot", "score": 0.941},
+                            {"rank": 3, "external_id": "P04637", "source": "uniprot", "score": 0.897},
+                        ],
+                    }
+                }
+            },
+        },
+        422: {
+            "description": "Invalid query or unknown entity type",
+            "content": {
+                "application/json": {
+                    "example": {"detail": "entity_type must be 'protein' or 'compound', got 'gene'"}
+                }
+            },
+        },
+    },
+)
+async def similar(request: SimilarRequest):
+    """
+    Find similar proteins or compounds.
+
+    **Protein similarity** (`entity_type: "protein"`):
+    - Query is an amino-acid sequence
+    - Generates ESM-2 embedding on the fly
+    - Ranks all stored proteins by **cosine similarity**
+
+    **Compound similarity** (`entity_type: "compound"`):
+    - Query is a SMILES string
+    - Generates Morgan fingerprint (ECFP4) on the fly
+    - Ranks all stored compounds by **Tanimoto similarity**
+    """
+    entity_type = request.entity_type.lower()
+
+    if entity_type not in ("protein", "compound"):
+        raise HTTPException(
+            status_code=422,
+            detail=f"entity_type must be 'protein' or 'compound', got '{request.entity_type}'",
+        )
+
+    try:
+        service = _get_similarity_service()
+
+        if entity_type == "protein":
+            results = service.find_similar_proteins(sequence=request.query, top_k=request.top_k)
+            metric = "cosine"
+        else:
+            results = service.find_similar_compounds(smiles=request.query, top_k=request.top_k)
+            metric = "cosine"
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    return SimilarResponse(
+        entity_type=entity_type,
+        query=request.query,
+        top_k=request.top_k,
+        similarity_metric=metric,
         results=[RankedTarget(**r) for r in results],
     )
