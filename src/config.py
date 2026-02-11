@@ -9,6 +9,10 @@ class Settings(BaseSettings):
     app_port: int
     log_level: str
 
+    # Security
+    api_key: str = ""  # empty = auth disabled (local dev)
+    cors_origins: str = "*"  # comma-separated origins
+
     # Database (Sync URL for Alembic, computed Async for App)
     database_url: str
 

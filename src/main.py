@@ -25,6 +25,42 @@ app = FastAPI(
     },
 )
 
+# ---------------------------------------------------------------------------
+# Middleware (order matters: outermost first)
+# ---------------------------------------------------------------------------
+from fastapi.middleware.cors import CORSMiddleware
+from src.middleware import APIKeyMiddleware, RequestLoggingMiddleware
+
+# Request logging (outermost — captures full latency incl. auth)
+app.add_middleware(RequestLoggingMiddleware)
+
+# API key authentication
+def _get_api_key() -> str:
+    """Lazy import to avoid config resolution at import time during tests."""
+    try:
+        from src.config import settings
+        return settings.api_key
+    except Exception:
+        return ""
+
+app.add_middleware(APIKeyMiddleware, api_key=_get_api_key())
+
+# CORS
+def _get_cors_origins() -> list:
+    try:
+        from src.config import settings
+        return [o.strip() for o in settings.cors_origins.split(",")]
+    except Exception:
+        return ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_get_cors_origins(),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Lazy-initialized inference service (loaded on first /rank request)
 _inference_service = None
 
