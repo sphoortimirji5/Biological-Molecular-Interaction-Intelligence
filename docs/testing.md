@@ -1,6 +1,6 @@
 # Testing Guide
 
-> **57 tests** across 12 test modules — covering featurization, scoring, training, inference, and ingestion.
+> **79 tests** across 15 test modules — covering featurization, scoring, training, inference, similarity, middleware, API, and ingestion.
 
 ---
 
@@ -23,7 +23,7 @@ python3 -m pytest tests/ -v -m integration
 
 | Tier | Marker | Dependencies | Count |
 |------|--------|-------------|-------|
-| **Unit** | _(default)_ | None — all external deps mocked | 52 |
+| **Unit** | _(default)_ | None — all external deps mocked | 74 |
 | **Integration** | `@pytest.mark.integration` | Postgres, MinIO, migrations applied | 5 |
 
 ---
@@ -127,6 +127,49 @@ python3 -m pytest tests/ -v -m integration
 | 2 | `test_model_and_report_persisted` | Artifact persistence | Model and report saved to expected paths |
 | 3 | `test_empty_data_raises` | No training data | Raises error — not silent no-op |
 | 4 | `test_evaluation_has_metrics` | Post-training evaluation | Evaluation report has AUC-ROC, accuracy |
+
+---
+
+### Similarity Service — `test_similarity.py`
+
+| # | Test | Use Case | Validates |
+|---|------|----------|---------|
+| 1 | `test_identical_vectors` | Same vector as query and candidate | Score ≈ 1.0 |
+| 2 | `test_orthogonal_vectors` | Perpendicular vectors | Score ≈ 0.0 |
+| 3 | `test_zero_query` | Zero vector input | Returns 0.0 (no NaN) |
+| 4 | `test_multiple_candidates` | Rank multiple candidates | Correct ordering by similarity |
+| 5 | `test_find_similar_proteins` | End-to-end protein search | Returns ranked results with scores |
+| 6 | `test_find_similar_compounds` | End-to-end compound search | Returns ranked results with scores |
+
+---
+
+### Middleware — `test_middleware.py`
+
+| # | Test | Use Case | Validates |
+|---|------|----------|---------|
+| 1 | `test_valid_api_key` | Correct `X-API-Key` header | Request proceeds (200) |
+| 2 | `test_missing_api_key` | No header provided | 401 Unauthorized |
+| 3 | `test_invalid_api_key` | Wrong key | 401 Unauthorized |
+| 4 | `test_health_bypass` | `/health` without key | Allowed (exempt path) |
+| 5 | `test_metrics_bypass` | `/metrics` without key | Allowed (exempt path) |
+| 6 | `test_docs_bypass` | `/docs` without key | Allowed (exempt path) |
+| 7 | `test_request_logging` | Any request | Prometheus histogram recorded |
+
+---
+
+### API Integration — `test_api.py`
+
+| # | Test | Use Case | Validates |
+|---|------|----------|---------|
+| 1 | `test_root` | GET `/` | Welcome message |
+| 2 | `test_health_healthy` | All services up | 200, status=healthy |
+| 3 | `test_health_degraded` | DB down | 503, status=degraded |
+| 4 | `test_rank_success` | Valid rank request | Scored results returned |
+| 5 | `test_rank_invalid_smiles` | Bad SMILES | 422 with error detail |
+| 6 | `test_similar_protein` | Protein similarity search | Cosine metric, ranked results |
+| 7 | `test_similar_compound` | Compound similarity search | Cosine metric, ranked results |
+| 8 | `test_similar_invalid_entity` | Bad entity type | 422 error |
+| 9 | `test_similar_invalid_query` | Bad query input | 422 error |
 
 ---
 
@@ -238,6 +281,9 @@ docker compose down
 | Component | Unit Tests | Integration Tests | Total |
 |-----------|-----------|------------------|-------|
 | Inference Service | 8 | — | 8 |
+| Similarity Service | 6 | — | 6 |
+| Middleware | 7 | — | 7 |
+| API (TestClient) | 9 | — | 9 |
 | Morgan Fingerprints | 6 | — | 6 |
 | Protein Embeddings | 5 | — | 5 |
 | Scoring Strategies | 4 | — | 4 |
@@ -248,4 +294,4 @@ docker compose down
 | Feature Store | 3 | — | 3 |
 | Featurization Manager | 5 | 1 | 6 |
 | Ingestion Pipeline | — | 4 | 4 |
-| **Total** | **52** | **5** | **57** |
+| **Total** | **74** | **5** | **79** |

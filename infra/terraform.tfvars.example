@@ -1,0 +1,10 @@
+# Copy this file to terraform.tfvars and fill in your values
+project_name      = "bmii"
+environment       = "production"
+aws_region        = "us-east-1"
+db_instance_class = "db.t3.micro"
+ecs_cpu           = 1024
+ecs_memory        = 2048
+ecs_desired_count = 1
+image_tag         = "latest"
+api_key           = ""  # Set a strong API key for production

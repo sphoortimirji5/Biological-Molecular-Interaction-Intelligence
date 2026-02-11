@@ -17,7 +17,7 @@ The system is designed for **reproducibility**, **extensibility**, and **traceab
 ```mermaid
 graph TD
     subgraph "Phase 1: Ingestion"
-        A[External Sources] -->|Fetch & Validate| B(Ingestion Worker Pool)
+        A[External Sources] -->|Fetch & Validate| B(Ingestion Manager)
         B -->|Raw Artifacts| C[(S3-Compatible Object Storage)]
         B -->|Structured Metadata| D[(PostgreSQL)]
         
@@ -29,18 +29,22 @@ graph TD
         C1 --> E(Feature Generator)
         D1 --> E
         
-        E -->|Fingerprints / Embeddings| F[(Feature Store - Parquet / S3)]
+        E -->|Morgan FP / ESM-2 Embeddings| F[(Feature Store — Parquet / S3)]
         F --> G(Model Trainer)
         
-        G -->|Train/Val Split| H{Model Wrapper}
+        G -->|Train/Val Split| H{XGBoost Model}
         H -->|Serialize| I[Model Artifacts]
         I -.->|s3://models/xgboost/v1| C
     end
 
-    subgraph "Phase 4: Inference & Ranking"
-        J[User / API] -->|SMILES| K(Inference Service)
+    subgraph "Phase 4: Inference API"
+        J[Client] -->|SMILES / Protein Seq| MW(Middleware — Auth, Logging, CORS)
+        MW --> K(Inference Service — /rank)
+        MW --> SIM(Similarity Service — /similar)
         K -->|Load| I
         K -->|Rank| L[Top-K Probabilities]
+        SIM -->|Cosine Search| F
+        SIM --> L
         L --> J
     end
     
@@ -59,58 +63,96 @@ graph TD
 
 ```
 ├── src/
-│   ├── ingestion/      # Data Sources, Parsers, Storage Layout
-│   ├── features/       # Molecular Featurization Logic
-│   ├── models/         # Model Wrappers
-│   ├── db/             # Database Models & Connection
-│   ├── config.py       # Configuration Management
-│   └── main.py         # FastAPI Entrypoint
-├── migrations/         # Alembic Database Migrations
-├── docs/               # Architecture & Standards Documentation
-├── tests/              # Unit & Integration Tests
-├── docker-compose.yml  # Local stack (Postgres + S3-compatible storage)
-└── pyproject.toml      # Dependency Management
+│   ├── ingestion/          # Data Sources, Parsers, Storage Layout
+│   │   ├── interfaces.py       # DataSource ABC
+│   │   ├── sources.py          # ChEMBL, UniProt fetchers
+│   │   ├── parsers.py          # SDF, FASTA, CSV parsers
+│   │   ├── storage.py          # S3-compatible object storage
+│   │   └── manager.py          # IngestionManager orchestrator
+│   ├── features/           # Molecular Featurization
+│   │   ├── morgan.py           # RDKit Morgan fingerprints (ECFP4)
+│   │   ├── protein_embeddings.py  # ESM-2 embeddings via HuggingFace
+│   │   ├── store.py            # Parquet feature store (S3)
+│   │   └── manager.py          # FeaturizationManager orchestrator
+│   ├── models/             # Training & Scoring
+│   │   ├── xgboost_model.py    # XGBoost wrapper (train/predict/save/load)
+│   │   ├── scoring.py          # SimilarityScorer, LearnedScorer strategies
+│   │   ├── evaluator.py        # AUROC, AUPRC, accuracy metrics
+│   │   ├── training_data.py    # TrainingDataBuilder (stratified splits)
+│   │   └── trainer.py          # TrainingManager orchestrator
+│   ├── inference/          # API Services
+│   │   ├── service.py          # InferenceService (/rank)
+│   │   ├── similarity.py       # SimilarityService (/similar)
+│   │   └── schemas.py          # Pydantic request/response models
+│   ├── db/                 # Database
+│   │   ├── models.py           # SQLAlchemy ORM (proteins, compounds, interactions)
+│   │   └── database.py         # Engine & session factory
+│   ├── config.py           # Pydantic Settings (env-driven)
+│   ├── main.py             # FastAPI app (/rank, /similar, /health, /metrics)
+│   ├── middleware.py       # API key auth, request logging
+│   ├── metrics.py          # Prometheus counters & histograms
+│   ├── logging_config.py   # structlog configuration
+│   └── tracing.py          # OpenTelemetry setup
+├── infra/                  # Terraform IaC
+│   ├── main.tf                 # Root module composition
+│   ├── variables.tf            # Input variables
+│   ├── outputs.tf              # Stack outputs (ALB URL, ECR, RDS)
+│   └── modules/
+│       ├── networking/         # VPC, subnets, NAT, security groups
+│       ├── database/           # RDS PostgreSQL 15
+│       ├── storage/            # S3 buckets (raw, processed, artifacts, features)
+│       ├── ecr/                # Container registry
+│       ├── ecs/                # Fargate cluster, ALB, auto-scaling
+│       └── secrets/            # SSM Parameter Store
+├── migrations/             # Alembic database migrations
+├── docs/                   # Documentation
+├── tests/                  # 79 unit + integration tests
+├── Dockerfile              # Multi-stage production build
+├── docker-compose.yml      # Local stack (Postgres + MinIO)
+└── pyproject.toml          # Poetry dependency management
 ```
 
-## Implementation Status (Phase 1)
+## Implementation Status
 
-**Scope**:
-Phase 1 focuses on deterministic ingestion, identity normalization, and metadata persistence. Feature generation, training, and inference components are scaffolded but not yet production-enabled.
+| Phase | Status | Highlights |
+|-------|--------|-----------|
+| **1. Ingestion** | ✅ Complete | SDF/FASTA/CSV parsers, S3 storage layout, PostgreSQL metadata |
+| **2. Featurization** | ✅ Complete | Morgan fingerprints (ECFP4), ESM-2 protein embeddings, Parquet feature store |
+| **3. Training** | ✅ Complete | XGBoost baseline, TrainingDataBuilder, ModelEvaluator (AUROC/AUPRC) |
+| **4. Inference API** | ✅ Complete | `/rank`, `/similar`, `/health` endpoints, API key auth, Prometheus metrics |
+| **5. Infrastructure** | ✅ Complete | Terraform IaC for AWS (ECS Fargate, RDS, S3, ALB) |
 
-**Database Schema**:
-*   Strict `(source, external_id)` identity for Proteins, Compounds, and Interactions.
-*   Interaction identity is source-scoped (`external_id` refers to the source record ID).
-*   UUIDs with server-side generation (`gen_random_uuid`).
-*   JSONB metadata support.
+## AWS Production Architecture
 
-**Storage**:
-*   S3-compatible via `ObjectStorageProvider` interface (`src/ingestion/storage_interface.py`).
-*   Strict layout: `raw/<source>/<version>/<sha256>/<file>`.
+```mermaid
+graph TD
+    Client[Client] --> ALB[Application Load Balancer]
+    ALB --> ECS["ECS Fargate<br/>(Private Subnet)"]
+    ECS --> RDS["RDS PostgreSQL 15<br/>(Private Subnet)"]
+    ECS --> S3["S3 Buckets<br/>(raw, processed, artifacts, features)"]
+    ECS --> SSM["SSM Parameter Store<br/>(Secrets)"]
+    ECR["ECR Registry"] -.->|Image Pull| ECS
+    
+    style ALB fill:#ff9900,stroke:#333,color:#000
+    style ECS fill:#ff9900,stroke:#333,color:#000
+    style RDS fill:#3b48cc,stroke:#333,color:#fff
+    style S3 fill:#3f8624,stroke:#333,color:#fff
+    style SSM fill:#dd344c,stroke:#333,color:#fff
+    style ECR fill:#ff9900,stroke:#333,color:#000
+```
 
-**Parsers**:
-*   `SDFParser` (Chemical structures via RDKit).
-*   `FastaParser` (Protein sequences via Biopython).
-*   `CSVParser` (Chunked Pandas processing).
+Fully provisioned via Terraform (6 modules). See [docs/migration.md](docs/migration.md) for the full local → production migration plan.
 
 ## Getting Started
 
-1.  **Environment Setup**:
-    ```bash
-    cp .env.example .env
-    # Edit .env with your configuration
-    docker-compose up -d
-    ```
+```bash
+# Local development
+cp .env.example .env
+docker-compose up -d
+poetry install && poetry run pytest
+```
 
-2.  **Run Migrations**:
-    ```bash
-    docker-compose run --rm app poetry run alembic upgrade head
-    ```
-
-3.  **Run Tests** (Requires local environment):
-    ```bash
-    poetry install
-    poetry run pytest
-    ```
+See also: [API docs](docs/api.md) · [Testing guide](docs/testing.md) · [Migration](docs/migration.md)
 
 ## Why This Architecture
 
@@ -125,5 +167,5 @@ The prototype defaults to deterministic similarity-based ranking using pretraine
 | **Protein Embeddings** | HuggingFace `transformers` | Facebook `fair-esm`, PyTorch Hub | Model-agnostic: swap ESM-2 → ProtTrans/Ankh via one config change. Standard tokenizer API handles padding/truncation. |
 | **Compound Fingerprints** | RDKit Morgan (ECFP4) | MACCS, Avalon, MAP4 | Industry standard for DTI. Deterministic, fast, no model weights. |
 | **Feature Persistence** | Parquet on S3 | HDF5, CSV, Delta Lake | Columnar, compressed, schema-enforced. Direct compatibility with pandas/PyArrow. |
-| **PyTorch Distribution** | CPU-only local, GPU via Dockerfile build arg | Single full install | 200 MB local vs 2 GB. Zero code changes between environments. |
-
+| **Deployment** | ECS Fargate | Lambda, EKS, EC2 | ML models stay loaded in memory (no cold starts). Serverless containers with auto-scaling. |
+| **IaC** | Terraform | CDK, CloudFormation | Multi-cloud portable, HCL is readable, mature module ecosystem. |
